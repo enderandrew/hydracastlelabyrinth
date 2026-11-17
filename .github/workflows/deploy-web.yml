@@ -1,4 +1,4 @@
-name: Build Emscripten (SDL3) & Deploy to GitHub Pages
+name: Build Emscripten (SDL2) & Deploy to GitHub Pages
 
 on:
   push:
@@ -28,38 +28,19 @@ jobs:
         with:
           version: latest
 
-      - name: Build and install SDL3 & SDL3_mixer for Emscripten
+      - name: Configure and compile with emcmake
         run: |
-          # Build SDL3 static library into emsdk sysroot
-          git clone --depth 1 --branch release-3.2.8 https://github.com/libsdl-org/SDL.git /tmp/SDL3
-          emcmake cmake -S /tmp/SDL3 -B /tmp/SDL3/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DSDL_SHARED=OFF \
-            -DSDL_STATIC=ON \
-            -DSDL_TEST_LIBRARY=OFF
-          cmake --build /tmp/SDL3/build -j$(nproc)
-          cmake --install /tmp/SDL3/build
+          mkdir -p docs build
+          # file_packager looks for 'data' inside the build working directory
+          ln -sfn "$PWD/data" build/data
 
-          # Build SDL3_mixer static library into emsdk sysroot
-          git clone --depth 1 https://github.com/libsdl-org/SDL_mixer.git /tmp/SDL3_mixer
-          emcmake cmake -S /tmp/SDL3_mixer -B /tmp/SDL3_mixer/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DSDLMIXER_VENDORED=ON \
-            -DSDLMIXER_OPUS=OFF \
-            -DSDLMIXER_FLAC=OFF \
-            -DSDLMIXER_MOD=OFF \
-            -DSDLMIXER_MIDI=OFF \
-            -DSDLMIXER_WAVPACK=OFF
-          cmake --build /tmp/SDL3_mixer/build -j$(nproc)
-          cmake --install /tmp/SDL3_mixer/build
+          emcmake cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Configure and build HCL (SDL3)
-        run: |
-          mkdir -p docs
-          emcmake cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DUSE_SDL3=ON
+          # 1. Strip -std=c++11 from C flags (clang/emcc rejects it on .c files)
+          sed -i 's/-std=c++11//g' build/CMakeFiles/hcl.dir/flags.make
+          # 2. Fix OUTPUT_NAME "index.html" + default .js suffix -> "index.html"
+          sed -i 's/index\.html\.js/index.html/g' build/CMakeFiles/hcl.dir/build.make build/CMakeFiles/hcl.dir/link.txt
+
           cmake --build build -j$(nproc)
 
       - name: Upload Pages artifact
