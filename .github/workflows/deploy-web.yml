@@ -1,4 +1,4 @@
-name: Build Emscripten (SDL3) & Deploy to GitHub Pages
+name: Build Emscripten & Deploy to GitHub Pages
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -28,36 +28,21 @@ jobs:
         with:
           version: latest
 
-      - name: Build SDL3 from source (if not vendored in repo)
-        run: |
-          # If your fork already vendors SDL3 via FetchContent/add_subdirectory,
-          # CMake will use that. Otherwise, this builds and installs SDL3 into the emsdk sysroot.
-          if [ ! -d "external/SDL" ] && [ ! -d "SDL" ]; then
-            git clone --depth 1 --branch release-3.2.0 https://github.com/libsdl-org/SDL.git /tmp/SDL3
-            emcmake cmake -S /tmp/SDL3 -B /tmp/SDL3/build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DSDL_SHARED=OFF \
-              -DSDL_STATIC=ON \
-              -DSDL_TEST_LIBRARY=OFF
-            cmake --build /tmp/SDL3/build -j$(nproc)
-            cmake --install /tmp/SDL3/build
-          fi
-
       - name: Configure with emcmake
         run: |
           emcmake cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DUSE_SDL3=ON \
-            -DCMAKE_EXECUTABLE_SUFFIX=".html" \
-            -DCMAKE_EXE_LINKER_FLAGS="-sUSE_SDL=0 -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY --preload-file data@/data"
+            -DCMAKE_EXECUTABLE_SUFFIX=".html"
 
-      - name: Compile with CMake
-        run: cmake --build build -j$(nproc)
+      - name: Fix -std=c++11 in C flags and compile
+        run: |
+          # Remove -std=c++11 from C_FLAGS so emcc doesn't reject .c files
+          sed -i 's/-std=c++11//g' build/CMakeFiles/hcl.dir/flags.make
+          cmake --build build -j$(nproc)
 
       - name: Prepare GitHub Pages artifact
         run: |
           mkdir -p dist
-          # Copy compiled HTML, JS, WASM, and preloaded data files
           cp build/*.html build/*.js build/*.wasm dist/
           if ls build/*.data 1> /dev/null 2>&1; then
             cp build/*.data dist/
