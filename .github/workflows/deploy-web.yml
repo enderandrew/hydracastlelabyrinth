@@ -1,4 +1,4 @@
-name: Build Emscripten & Deploy to GitHub Pages
+name: Build Emscripten (SDL3) & Deploy to GitHub Pages
 
 on:
   push:
@@ -28,36 +28,44 @@ jobs:
         with:
           version: latest
 
-      - name: Configure with emcmake
+      - name: Build and install SDL3 & SDL3_mixer for Emscripten
         run: |
+          # Build SDL3 static library into emsdk sysroot
+          git clone --depth 1 --branch release-3.2.8 https://github.com/libsdl-org/SDL.git /tmp/SDL3
+          emcmake cmake -S /tmp/SDL3 -B /tmp/SDL3/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_SHARED=OFF \
+            -DSDL_STATIC=ON \
+            -DSDL_TEST_LIBRARY=OFF
+          cmake --build /tmp/SDL3/build -j$(nproc)
+          cmake --install /tmp/SDL3/build
+
+          # Build SDL3_mixer static library into emsdk sysroot
+          git clone --depth 1 https://github.com/libsdl-org/SDL_mixer.git /tmp/SDL3_mixer
+          emcmake cmake -S /tmp/SDL3_mixer -B /tmp/SDL3_mixer/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DSDLMIXER_VENDORED=ON \
+            -DSDLMIXER_OPUS=OFF \
+            -DSDLMIXER_FLAC=OFF \
+            -DSDLMIXER_MOD=OFF \
+            -DSDLMIXER_MIDI=OFF \
+            -DSDLMIXER_WAVPACK=OFF
+          cmake --build /tmp/SDL3_mixer/build -j$(nproc)
+          cmake --install /tmp/SDL3_mixer/build
+
+      - name: Configure and build HCL (SDL3)
+        run: |
+          mkdir -p docs
           emcmake cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_EXECUTABLE_SUFFIX=".html"
-
-      - name: Fix -std=c++11 in C flags and compile
-        run: |
-          # Remove -std=c++11 from C_FLAGS so emcc doesn't reject .c files
-          sed -i 's/-std=c++11//g' build/CMakeFiles/hcl.dir/flags.make
+            -DUSE_SDL3=ON
           cmake --build build -j$(nproc)
-
-      - name: Prepare GitHub Pages artifact
-        run: |
-          mkdir -p dist
-          cp build/*.html build/*.js build/*.wasm dist/
-          if ls build/*.data 1> /dev/null 2>&1; then
-            cp build/*.data dist/
-          fi
-
-          # Rename the main output HTML to index.html for GitHub Pages
-          MAIN_HTML=$(find dist -maxdepth 1 -name "*.html" ! -name "index.html" | head -n 1)
-          if [ -n "$MAIN_HTML" ]; then
-            mv "$MAIN_HTML" dist/index.html
-          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: docs
 
   deploy:
     environment:
