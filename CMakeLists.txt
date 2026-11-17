@@ -26,34 +26,18 @@ endif()
 
 if(EMSCRIPTEN)
 	add_definitions(-D_SDL)
-	add_definitions(-D_SDL2)
-	add_definitions(-DEMSCRIPTEN)
-	add_definitions("-s" "USE_SDL=2")
-	add_definitions("-s" "USE_SDL_MIXER=2")
-	add_definitions("-s" "USE_OGG=1")
-	add_definitions("-s" "USE_VORBIS=1")
-	add_definitions("-s" "ASSERTIONS=1")
-	add_compile_options("-emit-llvm")
-	add_compile_options("-std=c++11")
-	add_definitions("-s" "WASM=1")
-	add_definitions("--preload-file" "data")
-	#should force all def to false
-	if(NOT CMAKE_C_COMPILER EQUAL "emcc")
-		set(CMAKE_C_COMPILER emcc CACHE PATH "" FORCE)
-		set(CMAKE_CXX_COMPILER emcc CACHE PATH "" FORCE)
-		set(CMAKE_C_COMPILER_AR emar CACHE PATH "" FORCE)
-		set(CMAKE_C_COMPILER_RANLIB emranlib CACHE PATH "" FORCE)
-		#set(CMAKE_CROSSCOMPILING_EMULATOR node_js CACHE PATH "" FORCE)
-	endif()
-	if(NOT USE_SDL2)
-		set(USE_SDL2 ON CACHE BOOL ON FORCE)
-	endif()
+	add_definitions(-D__EMSCRIPTEN__)
 	if(USE_SDL3)
-		set(USE_SDL3 OFF CACHE BOOL OFF FORCE)
-		message(WARNING "SDL3 is not supported for the Emscripten target, falling back to SDL2")
+		add_definitions(-D_SDL3)
+		find_package(SDL3 REQUIRED)
+		find_package(SDL3_mixer REQUIRED)
+		include_directories(${SDL3_INCLUDE_DIRS} ${SDL3_mixer_INCLUDE_DIRS})
+	else()
+		set(USE_SDL2 ON CACHE BOOL "" FORCE)
+		add_definitions(-D_SDL2)
+		add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2" "-sUSE_OGG=1" "-sUSE_VORBIS=1")
 	endif()
-	set(SDL2_LIBRARIES SDL2)
-else(EMSCRIPTEN)
+endif()
 
 if(BITTBOY)
 	add_definitions(-DBITTBOY)
@@ -222,17 +206,27 @@ add_executable(hcl ${HCL_SOURCE_FILES} ${HCL_SDL_FILES})
 set_target_properties(hcl PROPERTIES OUTPUT_NAME "hcl")
 target_link_libraries (hcl ${EXTRA_LIBS} m)
 if(EMSCRIPTEN)
-	#set(CMAKE_EXECUTABLE_SUFFIX ".html")
+	set(CMAKE_EXECUTABLE_SUFFIX ".html")
 	target_compile_options(hcl PUBLIC "-O2")
-	add_custom_command(TARGET hcl PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/data $<TARGET_FILE_DIR:hcl>/data)
-	#target_compile_options(hcl "-O2")
-	#target_link_options(hcl PRIVATE USE_SDL=2) #needs cmake 3.13+
-	SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2 -s USE_OGG=1 -s USE_VORBIS=1 -s WASM=1")
-	SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} --emrun --preload-file data -s ASSERTIONS=1 -s TOTAL_MEMORY=128MB -s ALLOW_MEMORY_GROWTH=1 -s EXIT_RUNTIME=1")
-	SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} --shell-file ${CMAKE_SOURCE_DIR}/src/template.html")
-	#target_link_libraries(hcl "--preload-file" "data")
-	set_target_properties(hcl PROPERTIES OUTPUT_NAME "${CMAKE_SOURCE_DIR}/docs/index.html")
-endif(EMSCRIPTEN)
+	set_target_properties(hcl PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/docs"
+		OUTPUT_NAME "index"
+	)
+	if(USE_SDL3)
+		target_link_libraries(hcl SDL3::SDL3 SDL3_mixer::SDL3_mixer)
+	else()
+		target_link_options(hcl PRIVATE "-sUSE_SDL=2" "-sUSE_SDL_MIXER=2" "-sUSE_OGG=1" "-sUSE_VORBIS=1")
+	endif()
+	target_link_options(hcl PRIVATE
+		"-sWASM=1"
+		"-sASSERTIONS=1"
+		"-sTOTAL_MEMORY=128MB"
+		"-sALLOW_MEMORY_GROWTH=1"
+		"-sEXIT_RUNTIME=1"
+		"--preload-file" "${CMAKE_SOURCE_DIR}/data@data"
+		"--shell-file" "${CMAKE_SOURCE_DIR}/src/template.html"
+	)
+endif()
 
 # Main binary
 install(TARGETS hcl
